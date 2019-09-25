@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Data;
@@ -231,7 +231,7 @@ namespace EFCore.BulkExtensions
             sqlBulkCopy.BatchSize = BulkConfig.BatchSize;
             sqlBulkCopy.NotifyAfter = BulkConfig.NotifyAfter ?? BulkConfig.BatchSize;
             sqlBulkCopy.SqlRowsCopied += (sender, e) => {
-                progress?.Invoke((decimal)(e.RowsCopied * 10000 / entities.Count) / 10000); // round to 4 decimal places
+                progress?.Invoke(SqlBulkOperation.GetProgress(entities.Count, e.RowsCopied)); // round to 4 decimal places
             };
             sqlBulkCopy.BulkCopyTimeout = BulkConfig.BulkCopyTimeout ?? sqlBulkCopy.BulkCopyTimeout;
             sqlBulkCopy.EnableStreaming = BulkConfig.EnableStreaming;
@@ -500,7 +500,8 @@ namespace EFCore.BulkExtensions
         #region CompiledQuery
         public void LoadOutputData<T>(DbContext context, IList<T> entities) where T : class
         {
-            if (BulkConfig.SetOutputIdentity && HasSinglePrimaryKey)
+            bool hasIdentity = PropertyColumnNamesDict.Any(a => a.Value == IdentityColumnName);
+            if (BulkConfig.SetOutputIdentity && hasIdentity)
             {
                 string sqlQuery = SqlQueryBuilder.SelectFromOutputTable(this);
                 var entitiesWithOutputIdentity = QueryOutputTable<T>(context, sqlQuery).ToList();
@@ -521,7 +522,8 @@ namespace EFCore.BulkExtensions
 
         public async Task LoadOutputDataAsync<T>(DbContext context, IList<T> entities, CancellationToken cancellationToken) where T : class
         {
-            if (BulkConfig.SetOutputIdentity)
+            bool hasIdentity = PropertyColumnNamesDict.Any(a => a.Value == IdentityColumnName);
+            if (BulkConfig.SetOutputIdentity && hasIdentity)
             {
                 string sqlQuery = SqlQueryBuilder.SelectFromOutputTable(this);
                 var entitiesWithOutputIdentity = await QueryOutputTableAsync<T>(context, sqlQuery).ToListAsync(cancellationToken).ConfigureAwait(false);
