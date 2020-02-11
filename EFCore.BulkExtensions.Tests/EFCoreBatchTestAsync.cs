@@ -18,35 +18,43 @@ namespace EFCore.BulkExtensions.Tests
         {
             ContextUtil.DbServer = databaseType;
 
-            await RunBatchDeleteAllAsync(databaseType);
+            await RunDeleteAllAsync(databaseType);
             await RunInsertAsync();
             await RunBatchUpdateAsync();
+            int deletedEntities = await RunTopBatchDeleteAsync();
             await RunBatchDeleteAsync();
 
             using (var context = new TestContext(ContextUtil.GetOptions()))
             {
-                var lastItem = context.Items.LastOrDefaultAsync().Result;
+                var firstItem = (await context.Items.ToListAsync()).First();
+                var lastItem = (await context.Items.ToListAsync()).Last();
+                Assert.Equal(1, deletedEntities);
                 Assert.Equal(500, lastItem.ItemId);
                 Assert.Equal("Updated", lastItem.Description);
                 Assert.Null(lastItem.Price);
                 Assert.StartsWith("name ", lastItem.Name);
                 Assert.EndsWith(" Concatenated", lastItem.Name);
+                Assert.EndsWith(" TOP(1)", firstItem.Name);
             }
         }
 
-        public async Task RunBatchDeleteAllAsync(DbServer databaseType)
+        internal async Task RunDeleteAllAsync(DbServer databaseType)
         {
             using (var context = new TestContext(ContextUtil.GetOptions()))
             {
-                await context.Items.BatchDeleteAsync();
+                await context.Items.AddAsync(new Item { }); // used for initial add so that after RESEED it starts from 1, not 0
+                await context.SaveChangesAsync();
+
+                //await context.Items.BatchDeleteAsync(); // TODO: Use after BatchDelete gets implemented for v3.0 
+                await context.BulkDeleteAsync(context.Items.ToList());
 
                 if (databaseType == DbServer.SqlServer)
                 {
-                    await context.Database.ExecuteSqlCommandAsync("DBCC CHECKIDENT('[dbo].[Item]', RESEED, 0);").ConfigureAwait(false);
+                    await context.Database.ExecuteSqlRawAsync("DBCC CHECKIDENT('[dbo].[Item]', RESEED, 0);").ConfigureAwait(false);
                 }
                 if (databaseType == DbServer.Sqlite)
                 {
-                    await context.Database.ExecuteSqlCommandAsync("DELETE FROM sqlite_sequence WHERE name = 'Item';").ConfigureAwait(false);
+                    await context.Database.ExecuteSqlRawAsync("DELETE FROM sqlite_sequence WHERE name = 'Item';").ConfigureAwait(false);
                 }
             }
         }
@@ -83,9 +91,21 @@ namespace EFCore.BulkExtensions.Tests
 
                 decimal price = 0;
                 var query = context.Items.Where(a => a.ItemId <= 500 && a.Price >= price);
+
                 await query.BatchUpdateAsync(new Item { Description = "Updated" }/*, updateColumns*/);
 
                 await query.BatchUpdateAsync(a => new Item { Name = a.Name + " Concatenated", Quantity = a.Quantity + 100, Price = null }); // example of BatchUpdate value Increment/Decrement
+
+                query = context.Items.Where(a => a.ItemId <= 500 && a.Price == null);
+                await query.Take(1).BatchUpdateAsync(a => new Item { Name = a.Name + " TOP(1)", Quantity = a.Quantity + 100 }); // example of BatchUpdate with TOP(1)
+            }
+        }
+
+        private async Task<int> RunTopBatchDeleteAsync()
+        {
+            using (var context = new TestContext(ContextUtil.GetOptions()))
+            {
+                return await context.Items.Where(a => a.ItemId > 500).Take(1).BatchDeleteAsync();
             }
         }
 

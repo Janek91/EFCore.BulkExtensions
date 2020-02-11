@@ -1,6 +1,6 @@
-﻿using System;
+﻿using Microsoft.Data.SqlClient;
+using System;
 using System.Collections.Generic;
-using System.Data.SqlClient;
 using System.Linq;
 
 namespace EFCore.BulkExtensions
@@ -135,6 +135,23 @@ namespace EFCore.BulkExtensions
                      $" INTO {tableInfo.FullTempOutputTableName}";
             }
             q += ";";
+            return q;
+        }
+
+        public static string TruncateTable(string tableName)
+        {
+            var q = $"TRUNCATE TABLE {tableName};";
+            return q;
+        }
+
+
+        /// <summary>
+        /// Used for Sqlite, Truncate table 
+        /// </summary>
+        public static string DeleteTable(string tableName)
+        {
+            var q = $"DELETE FROM {tableName};" +
+                    $"VACUUM;";
             return q;
         }
 
